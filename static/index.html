@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Rust Chess</title>
+    <title>Rust Multiplayer Chess</title>
     <style>
       #myBoard {
-        width: 400px;
+        width: 750px;
+        max-width: 90%;
         margin: 20px auto;
       }
 
@@ -30,8 +31,25 @@
     <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
   </head>
   <body>
-    <h2 align="center">Rust WebSocket Chess</h2>
+    <!-- <h2 align="center">Rust WebSocket Chess</h2> -->
+
+    <div
+      id="player-role"
+      style="
+        text-align: center;
+        margin-top: 10px;
+        font-weight: bold;
+        font-size: xx-large;
+      "
+    >
+      You are _
+    </div>
+
     <div id="myBoard"></div>
+
+    <button id="new-game-btn" style="display: block; margin: 50px auto">
+      New Game
+    </button>
 
     <script>
       const game = new Chess();
@@ -45,9 +63,11 @@
         onMouseoverSquare: onMouseoverSquare,
         onMouseoutSquare: onMouseoutSquare,
         onMoveEnd: onMoveEnd,
-        onSnapEnd: onSnapEnd,
+        //onSnapEnd: onSnapEnd,
+        // onChange: onChange,
       });
       var $board = $("#myBoard");
+      $(window).resize(board.resize);
 
       var squareClass = "square-55d63";
 
@@ -56,8 +76,11 @@
 
       var squareToHighlight = null;
       var colorToHighlight = null;
+      var needHighlight = false;
 
-      const ws = new WebSocket("ws://" + location.host + "/ws");
+      let playerColor = null;
+
+      const socket = new WebSocket("ws://" + location.host + "/ws");
 
       function removeGreySquares() {
         $("#myBoard .square-55d63").css("background", "");
@@ -81,7 +104,9 @@
         // or if it's not that side's turn
         if (
           (game.turn() === "w" && piece.search(/^b/) !== -1) ||
-          (game.turn() === "b" && piece.search(/^w/) !== -1)
+          (game.turn() === "b" && piece.search(/^w/) !== -1) ||
+          (game.turn() === "w" && playerColor !== "white") ||
+          (game.turn() === "b" && playerColor !== "black")
         ) {
           return false;
         }
@@ -91,6 +116,7 @@
         removeGreySquares();
 
         const move = game.move({ from: source, to: target, promotion: "q" });
+
         if (move === null) return "snapback";
 
         // highlight
@@ -99,26 +125,45 @@
           $board.find(".square-" + move.from).addClass("highlight-white");
           squareToHighlight = move.to;
           colorToHighlight = "white";
+          needHighlight = true;
         } else {
           $board.find("." + squareClass).removeClass("highlight-black");
           $board.find(".square-" + move.from).addClass("highlight-black");
           squareToHighlight = move.to;
           colorToHighlight = "black";
+          needHighlight = true;
         }
+
+        const fen = game.fen();
+        socket.send(JSON.stringify({ type: "move", move, fen: game.fen() }));
       }
 
       function onMoveEnd() {
-        $board
-          .find(".square-" + squareToHighlight)
-          .addClass("highlight-" + colorToHighlight);
+        if (needHighlight) {
+          $board
+            .find(".square-" + squareToHighlight)
+            .addClass("highlight-" + colorToHighlight);
+          needHighlight = false;
+        }
       }
 
-      function onSnapEnd() {
-        const fen = game.fen();
-        ws.send(JSON.stringify({ fen }));
+      function onSnapEnd() {}
+
+      function onChange(oldPos, newPos) {
+        console.log("Position changed:");
+        console.log("Old position: " + objToFen(oldPos));
+        console.log("New position: " + objToFen(newPos));
+        console.log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
       }
 
       function onMouseoverSquare(square, piece) {
+        if (
+          (game.turn() === "w" && playerColor !== "white") ||
+          (game.turn() === "b" && playerColor !== "black")
+        ) {
+          return;
+        }
+
         // get list of possible moves for this square
         var moves = game.moves({
           square: square,
@@ -143,11 +188,46 @@
         removeGreySquares();
       }
 
-      ws.onmessage = function (event) {
-        const { fen } = JSON.parse(event.data);
-        game.load(fen);
-        board.position(fen);
-        onMoveEnd();
+      socket.onmessage = function (event) {
+        const data_msg = event.data;
+
+        try {
+          const msg = JSON.parse(data_msg);
+
+          if (msg.type === "welcome") {
+            playerColor = msg.role;
+            game.load(msg.fen);
+            board.position(msg.fen);
+            document.getElementById(
+              "player-role"
+            ).textContent = `You are ${playerColor}`;
+            return;
+          }
+
+          if (msg.type === "move") {
+            game.load(msg.fen);
+            board.position(msg.fen);
+            onMoveEnd();
+            return;
+          }
+
+          if (msg.type === "reset") {
+            game.reset();
+            board.position("start");
+            removeGreySquares();
+            $board.find("." + squareClass).removeClass("highlight-white");
+            $board.find("." + squareClass).removeClass("highlight-black");
+            return;
+          }
+
+          console.warn("Unknown message type:", msg);
+        } catch (e) {
+          console.error("❌ Failed to parse JSON:", event.data, e);
+        }
+      };
+
+      document.getElementById("new-game-btn").onclick = function () {
+        socket.send(JSON.stringify({ type: "reset", fen: game.fen() }));
       };
     </script>
   </body>
