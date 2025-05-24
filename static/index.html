@@ -15,6 +15,34 @@
       .highlight-black {
         box-shadow: inset 0 0 3px 3px blue;
       }
+
+      #game-over-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.75);
+        z-index: 999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #game-over-overlay > div {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        font-size: 24px;
+        text-align: center;
+      }
+
+      #game-over-overlay button {
+        margin-top: 20px;
+        font-size: 16px;
+        padding: 10px 20px;
+        border-radius: 10%;
+      }
     </style>
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
@@ -44,8 +72,12 @@
     >
       You are _
     </div>
-
     <div id="myBoard"></div>
+
+    <div id="game-over-overlay" style="display: none; flex-direction: column">
+      <div id="game-over-message">GG</div>
+      <button onclick="hideGameOver()">OK</button>
+    </div>
 
     <button id="new-game-btn" style="display: block; margin: 50px auto">
       New Game
@@ -64,7 +96,7 @@
         onMouseoutSquare: onMouseoutSquare,
         onMoveEnd: onMoveEnd,
         //onSnapEnd: onSnapEnd,
-        // onChange: onChange,
+        onChange: onChange,
       });
       var $board = $("#myBoard");
       $(window).resize(board.resize);
@@ -78,7 +110,7 @@
       var colorToHighlight = null;
       var needHighlight = false;
 
-      let playerColor = null;
+      let playerRole = null;
 
       const socket = new WebSocket("ws://" + location.host + "/ws");
 
@@ -105,8 +137,8 @@
         if (
           (game.turn() === "w" && piece.search(/^b/) !== -1) ||
           (game.turn() === "b" && piece.search(/^w/) !== -1) ||
-          (game.turn() === "w" && playerColor !== "white") ||
-          (game.turn() === "b" && playerColor !== "black")
+          (game.turn() === "w" && playerRole !== "white") ||
+          (game.turn() === "b" && playerRole !== "black")
         ) {
           return false;
         }
@@ -136,6 +168,8 @@
 
         const fen = game.fen();
         socket.send(JSON.stringify({ type: "move", move, fen: game.fen() }));
+
+        return;
       }
 
       function onMoveEnd() {
@@ -149,17 +183,35 @@
 
       function onSnapEnd() {}
 
-      function onChange(oldPos, newPos) {
-        console.log("Position changed:");
-        console.log("Old position: " + objToFen(oldPos));
-        console.log("New position: " + objToFen(newPos));
-        console.log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+      function onChange(oldPos, newPos) {}
+
+      function checkGameOver() {
+        // ✅ Game over detection
+        if (game.in_checkmate()) {
+          // const winner = move.color === "w" ? "White" : "Black"; // old, needs move
+          const winner = game.turn() === "w" ? "Black" : "White"; // turn is to-move, so opposite just won
+          showGameOver(`Checkmate! ${winner} wins.`);
+        } else if (game.in_stalemate()) {
+          showGameOver("Stalemate! It's a draw.");
+        } else if (game.in_draw()) {
+          showGameOver("Draw!");
+        }
+      }
+
+      function showGameOver(message) {
+        document.getElementById("game-over-message").textContent = message;
+        document.getElementById("game-over-overlay").style.display = "flex";
+        board.draggable = false; // disable further moves
+      }
+
+      function hideGameOver() {
+        document.getElementById("game-over-overlay").style.display = "none";
       }
 
       function onMouseoverSquare(square, piece) {
         if (
-          (game.turn() === "w" && playerColor !== "white") ||
-          (game.turn() === "b" && playerColor !== "black")
+          (game.turn() === "w" && playerRole !== "white") ||
+          (game.turn() === "b" && playerRole !== "black")
         ) {
           return;
         }
@@ -195,12 +247,12 @@
           const msg = JSON.parse(data_msg);
 
           if (msg.type === "welcome") {
-            playerColor = msg.role;
+            playerRole = msg.role;
             game.load(msg.fen);
             board.position(msg.fen);
             document.getElementById(
               "player-role"
-            ).textContent = `You are ${playerColor}`;
+            ).textContent = `You are ${playerRole}`;
             return;
           }
 
@@ -208,6 +260,8 @@
             game.load(msg.fen);
             board.position(msg.fen);
             onMoveEnd();
+
+            checkGameOver();
             return;
           }
 
@@ -227,7 +281,9 @@
       };
 
       document.getElementById("new-game-btn").onclick = function () {
-        socket.send(JSON.stringify({ type: "reset", fen: game.fen() }));
+        if (playerRole !== "spectator") {
+          socket.send(JSON.stringify({ type: "reset", fen: game.fen() }));
+        }
       };
     </script>
   </body>
