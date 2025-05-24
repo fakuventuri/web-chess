@@ -7,6 +7,13 @@
         width: 400px;
         margin: 20px auto;
       }
+
+      .highlight-white {
+        box-shadow: inset 0 0 3px 3px yellow;
+      }
+      .highlight-black {
+        box-shadow: inset 0 0 3px 3px blue;
+      }
     </style>
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
@@ -37,13 +44,20 @@
         onDrop: onDrop,
         onMouseoverSquare: onMouseoverSquare,
         onMouseoutSquare: onMouseoutSquare,
+        onMoveEnd: onMoveEnd,
         onSnapEnd: onSnapEnd,
       });
+      var $board = $("#myBoard");
 
-      const ws = new WebSocket("ws://" + location.host + "/ws");
+      var squareClass = "square-55d63";
 
       var whiteSquareGrey = "#a9a9a9";
       var blackSquareGrey = "#696969";
+
+      var squareToHighlight = null;
+      var colorToHighlight = null;
+
+      const ws = new WebSocket("ws://" + location.host + "/ws");
 
       function removeGreySquares() {
         $("#myBoard .square-55d63").css("background", "");
@@ -78,6 +92,25 @@
 
         const move = game.move({ from: source, to: target, promotion: "q" });
         if (move === null) return "snapback";
+
+        // highlight
+        if (move.color === "w") {
+          $board.find("." + squareClass).removeClass("highlight-white");
+          $board.find(".square-" + move.from).addClass("highlight-white");
+          squareToHighlight = move.to;
+          colorToHighlight = "white";
+        } else {
+          $board.find("." + squareClass).removeClass("highlight-black");
+          $board.find(".square-" + move.from).addClass("highlight-black");
+          squareToHighlight = move.to;
+          colorToHighlight = "black";
+        }
+      }
+
+      function onMoveEnd() {
+        $board
+          .find(".square-" + squareToHighlight)
+          .addClass("highlight-" + colorToHighlight);
       }
 
       function onSnapEnd() {
@@ -114,6 +147,7 @@
         const { fen } = JSON.parse(event.data);
         game.load(fen);
         board.position(fen);
+        onMoveEnd();
       };
     </script>
   </body>
