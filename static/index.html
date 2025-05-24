@@ -3,8 +3,12 @@
   <head>
     <title>Rust Multiplayer Chess</title>
     <style>
+      body {
+        background-color: rgb(37, 37, 37);
+      }
+
       #myBoard {
-        width: 750px;
+        width: 700px;
         max-width: 90%;
         margin: 20px auto;
       }
@@ -14,6 +18,10 @@
       }
       .highlight-black {
         box-shadow: inset 0 0 3px 3px blue;
+      }
+
+      .check-highlight {
+        background-color: #961616 !important; /* light red-gray */
       }
 
       #game-over-overlay {
@@ -43,6 +51,86 @@
         padding: 10px 20px;
         border-radius: 10%;
       }
+
+      #turn-text {
+        font-size: 24px;
+        font-weight: bold;
+        padding: 10px 20px;
+        border-radius: 10px;
+        transition: all 0.3s ease;
+        display: inline-block;
+      }
+
+      .turn-white {
+        background-color: #ffffff;
+        color: #000000;
+        box-shadow: 0 0 20px 2px rgba(255, 255, 255, 0.7);
+      }
+
+      .turn-black {
+        background-color: #333333;
+        color: #ffffff;
+        box-shadow: 0 0 20px 2px rgba(0, 0, 0, 0.7);
+      }
+
+      .role-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        font-size: 22px;
+        font-weight: bold;
+        padding: 10px 18px;
+        border-radius: 10px;
+        margin: 20px auto;
+        width: fit-content;
+        transition: all 0.3s ease;
+        text-transform: capitalize;
+      }
+
+      .role-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+      }
+
+      .role-white {
+        background-color: #f0f0f0;
+        color: #111;
+        border: 2px solid #ccc;
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.6);
+      }
+
+      .role-white .role-avatar {
+        background-color: #fff;
+        border-color: #bbb;
+      }
+
+      .role-black {
+        background-color: #222;
+        color: #eee;
+        border: 2px solid #444;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
+      }
+
+      .role-black .role-avatar {
+        background-color: #000;
+        border-color: #666;
+      }
+
+      .role-spectator {
+        background-color: #888;
+        color: #fff;
+        border: 2px dashed #aaa;
+        box-shadow: 0 0 10px rgba(128, 128, 128, 0.4);
+      }
+
+      .role-spectator .role-avatar {
+        background: linear-gradient(135deg, #aaa, #ccc);
+        border-color: #999;
+      }
     </style>
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
@@ -61,16 +149,13 @@
   <body>
     <!-- <h2 align="center">Rust WebSocket Chess</h2> -->
 
-    <div
-      id="player-role"
-      style="
-        text-align: center;
-        margin-top: 10px;
-        font-weight: bold;
-        font-size: xx-large;
-      "
-    >
-      You are _
+    <div id="player-role" class="role-indicator">
+      <span class="role-avatar"></span>
+      <span class="role-text">You are _</span>
+    </div>
+
+    <div id="turn-indicator" style="text-align: center; margin-top: 10px">
+      <span id="turn-text" class="turn-white">White's turn</span>
     </div>
     <div id="myBoard"></div>
 
@@ -105,6 +190,7 @@
 
       var whiteSquareGrey = "#a9a9a9";
       var blackSquareGrey = "#696969";
+      var checkSquareColor = "#f6bebe";
 
       var squareToHighlight = null;
       var colorToHighlight = null;
@@ -122,6 +208,7 @@
         var $square = $("#myBoard .square-" + square);
 
         var background = whiteSquareGrey;
+
         if ($square.hasClass("black-3c85d")) {
           background = blackSquareGrey;
         }
@@ -208,10 +295,44 @@
         document.getElementById("game-over-overlay").style.display = "none";
       }
 
+      function highlightKingCheck() {
+        if (!game.in_check()) {
+          removeCheckHighlights(); // clear any existing highlights
+          return;
+        }
+
+        const kingColor = game.turn(); // the side that's in check
+        const kingSquare = Object.entries(game.board()).flatMap((row, rank) =>
+          row[1]
+            .map((piece, file) => {
+              if (piece && piece.type === "k" && piece.color === kingColor) {
+                const fileChar = String.fromCharCode("a".charCodeAt(0) + file);
+                const rankChar = 8 - rank;
+                return `${fileChar}${rankChar}`;
+              }
+              return null;
+            })
+            .filter((x) => x)
+        )[0];
+
+        if (!kingSquare) return;
+
+        checkHighlights(kingSquare);
+      }
+
+      function checkHighlights(square) {
+        $("#myBoard .square-" + square).addClass("check-highlight");
+      }
+
+      function removeCheckHighlights() {
+        $("#myBoard .square-55d63").removeClass("check-highlight");
+      }
+
       function onMouseoverSquare(square, piece) {
         if (
-          (game.turn() === "w" && playerRole !== "white") ||
-          (game.turn() === "b" && playerRole !== "black")
+          playerRole !== "spectator" &&
+          ((game.turn() === "w" && playerRole !== "white") ||
+            (game.turn() === "b" && playerRole !== "black"))
         ) {
           return;
         }
@@ -240,6 +361,17 @@
         removeGreySquares();
       }
 
+      function updateTurnIndicator() {
+        const turnText = document.getElementById("turn-text");
+        const turn = game.turn() === "w" ? "white" : "black";
+        turnText.textContent = `${
+          turn.charAt(0).toUpperCase() + turn.slice(1)
+        }'s turn`;
+
+        turnText.classList.remove("turn-white", "turn-black");
+        turnText.classList.add(turn === "white" ? "turn-white" : "turn-black");
+      }
+
       socket.onmessage = function (event) {
         const data_msg = event.data;
 
@@ -250,9 +382,29 @@
             playerRole = msg.role;
             game.load(msg.fen);
             board.position(msg.fen);
-            document.getElementById(
-              "player-role"
-            ).textContent = `You are ${playerRole}`;
+
+            const roleEl = document.getElementById("player-role");
+            const roleText = roleEl.querySelector(".role-text");
+            roleEl.classList.remove(
+              "role-white",
+              "role-black",
+              "role-spectator"
+            );
+
+            if (playerRole === "white") {
+              roleEl.classList.add("role-white");
+              roleText.textContent = "You are white";
+            } else if (playerRole === "black") {
+              roleEl.classList.add("role-black");
+              roleText.textContent = "You are black";
+            } else {
+              roleEl.classList.add("role-spectator");
+              roleText.textContent = "You are spectator";
+            }
+
+            updateTurnIndicator();
+            highlightKingCheck();
+            checkGameOver();
             return;
           }
 
@@ -261,6 +413,8 @@
             board.position(msg.fen);
             onMoveEnd();
 
+            updateTurnIndicator();
+            highlightKingCheck();
             checkGameOver();
             return;
           }
@@ -269,8 +423,10 @@
             game.reset();
             board.position("start");
             removeGreySquares();
+            removeCheckHighlights();
             $board.find("." + squareClass).removeClass("highlight-white");
             $board.find("." + squareClass).removeClass("highlight-black");
+            updateTurnIndicator();
             return;
           }
 
