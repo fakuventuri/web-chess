@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Rust Chess</title>
+    <style>
+      #myBoard {
+        width: 400px;
+        margin: 20px auto;
+      }
+    </style>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+
+    <!-- Chessboard.js CSS -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/chessboardjs@0.0.1/www/css/chessboard.min.css"
+    />
+
+    <!-- Chessboard.js script -->
+    <script src="https://cdn.jsdelivr.net/npm/chessboardjs@0.0.1/www/js/chessboard.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
+  </head>
+  <body>
+    <h2 align="center">Rust WebSocket Chess</h2>
+    <div id="myBoard"></div>
+
+    <script>
+      const game = new Chess();
+      const board = ChessBoard("myBoard", {
+        draggable: true,
+        position: "start",
+        pieceTheme:
+          "https://cdn.jsdelivr.net/npm/chessboardjs@0.0.1/www/img/chesspieces/wikipedia/{piece}.png", // alpha uscf wikipedia
+        onDragStart: onDragStart,
+        onDrop: onDrop,
+        onMouseoverSquare: onMouseoverSquare,
+        onMouseoutSquare: onMouseoutSquare,
+        onSnapEnd: onSnapEnd,
+      });
+
+      const ws = new WebSocket("ws://" + location.host + "/ws");
+
+      var whiteSquareGrey = "#a9a9a9";
+      var blackSquareGrey = "#696969";
+
+      function removeGreySquares() {
+        $("#myBoard .square-55d63").css("background", "");
+      }
+
+      function greySquare(square) {
+        var $square = $("#myBoard .square-" + square);
+
+        var background = whiteSquareGrey;
+        if ($square.hasClass("black-3c85d")) {
+          background = blackSquareGrey;
+        }
+
+        $square.css("background", background);
+      }
+
+      function onDragStart(source, piece) {
+        // do not pick up pieces if the game is over
+        if (game.game_over()) return false;
+
+        // or if it's not that side's turn
+        if (
+          (game.turn() === "w" && piece.search(/^b/) !== -1) ||
+          (game.turn() === "b" && piece.search(/^w/) !== -1)
+        ) {
+          return false;
+        }
+      }
+
+      function onDrop(source, target) {
+        removeGreySquares();
+
+        const move = game.move({ from: source, to: target, promotion: "q" });
+        if (move === null) return "snapback";
+      }
+
+      function onSnapEnd() {
+        const fen = game.fen();
+        ws.send(JSON.stringify({ fen }));
+      }
+
+      function onMouseoverSquare(square, piece) {
+        // get list of possible moves for this square
+        var moves = game.moves({
+          square: square,
+          verbose: true,
+        });
+
+        // exit if there are no moves available for this square
+        if (moves.length === 0) return;
+
+        // console.log(moves);
+
+        // highlight the square they moused over
+        greySquare(square);
+
+        // highlight the possible squares for this piece
+        for (var i = 0; i < moves.length; i++) {
+          greySquare(moves[i].to);
+        }
+      }
+
+      function onMouseoutSquare(square, piece) {
+        removeGreySquares();
+      }
+
+      ws.onmessage = function (event) {
+        const { fen } = JSON.parse(event.data);
+        game.load(fen);
+        board.position(fen);
+      };
+    </script>
+  </body>
+</html>
