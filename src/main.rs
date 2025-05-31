@@ -1,11 +1,11 @@
 use axum::{
-    Router,
     extract::{
-        State,
         ws::{Message, WebSocket, WebSocketUpgrade},
+        State,
     },
     response::IntoResponse,
     routing::{get, get_service},
+    Router,
 };
 use std::{
     collections::HashMap,
@@ -47,7 +47,7 @@ async fn main() {
     //     .await
     //     .unwrap();
 
-    let addr = "0.0.0.0:3000";
+    let addr = "0.0.0.0:3001";
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     println!("Listening on {}", addr);
     axum::serve(listener, app).await.unwrap();
